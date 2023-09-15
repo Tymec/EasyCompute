@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="ComputeShader"
+config/name="EasyCompute"
 run/main_scene="res://examples/ShootingStars/ShootingStars.tscn"
 config/features=PackedStringArray("4.1", "Forward Plus")
 config/icon="res://icon.svg"
@@ -21,7 +21,7 @@ window/stretch/mode="viewport"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/compute_shader/plugin.cfg", "res://addons/easy_compute/plugin.cfg")
+enabled=PackedStringArray("res://addons/easy_compute/plugin.cfg")
 
 [rendering]
 
