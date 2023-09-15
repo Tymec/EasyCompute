@@ -30,10 +30,10 @@ void main() {
         }
     }
     color /= 9.0;
-    color = mix(pixel, color, 5.0 * deltaTime);
+    color = mix(pixel, color, 10.0 * deltaTime);
 
     // Evaporate
-    color = color - 0.75 * deltaTime;
+    color = color - 0.5 * deltaTime;
     color = max(color, vec3(0.0));
 
     // diffuse

@@ -1,9 +1,6 @@
 extends Node2D
 
 
-const SIZE = 1024
-
-
 @export var agent_count: int = 100000
 @export var agent_speed: float = 100.0
 
@@ -16,14 +13,16 @@ var image: Image
 
 func _ready():
 	# Load shaders
-	compute.load_shader("Post", "res://examples/ShootingStars/Post.glsl")
-	compute.load_shader("Movement", "res://examples/ShootingStars/Movement.glsl")
+	compute.load_shader("Post", "res://examples/demo/Post.glsl")
+	compute.load_shader("Movement", "res://examples/demo/Movement.glsl")
 	
 	# Create agents
 	for i in range(0, agent_count):
 		# Spawn inside a circle
 		var pos = Vector2(512, 512) + Vector2.RIGHT.rotated(randf_range(0, TAU)) * randf_range(0, 512)
-		var vel = Vector2.RIGHT.rotated(randf_range(0, TAU))
+		#var vel = Vector2.RIGHT.rotated(randf_range(0, TAU))
+		# Make velocity towards center
+		var vel = (Vector2(512, 512) - pos).normalized()
 
 		agents.append_array([
 			pos.x, pos.y,

@@ -21,7 +21,7 @@ layout(set = 0, binding = 2, rgba8) uniform image2D outputImage;
 float checkAround(Agent agent, vec2 dir) {
     float concentration = 0.0;
     vec2 direction = agent.velocity + dir;
-    vec2 pos = agent.position + direction * 10.0;
+    vec2 pos = agent.position + direction * 50.0;
 
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
@@ -69,13 +69,13 @@ void main() {
         // Forward
     } else if (forwardConcentration < leftConcentration && forwardConcentration < rightConcentration) {
         // Apply a random rotation
-        rotation += (rand - 0.5) * 4.0 * deltaTime;
+        rotation += (rand - 0.5) * 0.6 * deltaTime;
     } else if (leftConcentration > rightConcentration) {
         // Left
-        rotation += rand * 4.0 * deltaTime;
+        rotation += rand * 0.3 * deltaTime;
     } else {
         // Right
-        rotation -= rand * 4.0 * deltaTime;
+        rotation -= rand * 0.3 * deltaTime;
     }
     agent.velocity = agent.velocity * mat2(cos(rotation), -sin(rotation), sin(rotation), cos(rotation));
     agent.velocity = normalize(agent.velocity) * 100.0;
@@ -110,10 +110,9 @@ void main() {
 
     // Write the agent to the image
     vec3 color = vec3(
-        //(agent.position.x / 1024.0) * 0.5 + 0.5,
-        //(agent.position.y / 1024.0) * 0.5 + 0.5,
-        //0.0
-        1.0, 1.0, 1.0
+        (agent.position.x / 1024.0) * 0.5 + 0.5,
+        (agent.position.y / 1024.0) * 0.5 + 0.5,
+        0.0
     );
 
     imageStore(outputImage, ivec2(agent.position), vec4(color, 1.0));

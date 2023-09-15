@@ -1,4 +1,4 @@
-@icon("res://addons/easy_compute/icon.svg")
+@icon("res://icon.svg")
 class_name EasyCompute
 #extends Node
 
