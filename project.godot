@@ -1,0 +1,28 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="ComputeShader"
+run/main_scene="res://examples/ShootingStars/ShootingStars.tscn"
+config/features=PackedStringArray("4.1", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/stretch/mode="viewport"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/compute_shader/plugin.cfg", "res://addons/easy_compute/plugin.cfg")
+
+[rendering]
+
+environment/defaults/default_clear_color=Color(0.1, 0.1, 0.1, 1)
