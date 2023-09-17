@@ -1,7 +1,7 @@
 EasyCompute
 ---
 
-![Example usage](/example.png)
+![Example usage](/assets/usage.png)
 
 ## TODO
 - [ ] Add support for 3D textures
