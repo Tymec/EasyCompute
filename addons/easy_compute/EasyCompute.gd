@@ -1,65 +1,60 @@
 @icon("res://icon.svg")
-class_name EasyCompute
-#extends Node
+class_name EasyCompute extends RefCounted
 
 
-signal compute_started
-signal compute_finished
+signal compute_dispatched(shader_name: String)
+signal compute_synced()
 
 
-var rd: RenderingDevice
-var uniform_set: RID
-var shader_cache: Dictionary
-var data_cache: Dictionary
+var rd: RenderingDevice = null
+var shader_cache: Dictionary = {}
+var data_cache: Dictionary = {}
 
 
-### TODO: Add support for samplers
+func _notification(what):
+	if what == NOTIFICATION_PREDELETE:
+		# Check if rendering device is already initialized
+		if rd == null:
+			return
+		assert(is_instance_valid(rd), "Rendering device is not valid")
 
+		# Destroy compute pipelines
+		for obj in shader_cache.values():
+			if obj["pipeline"].is_valid():
+				rd.free_rid(obj["pipeline"])
 
-func _ready() -> void:
-	rd = null
-	uniform_set = RID()
-	shader_cache = {}
-	data_cache = {}
+		# Destroy uniform sets
+		for obj in shader_cache.values():
+			if obj["uniform_set"].is_valid():
+				rd.free_rid(obj["uniform_set"])
 
-# func _notification(what) -> void:
-# 	# Object destructor, triggered before the engine deletes this Node.
-# 	if what == NOTIFICATION_PREDELETE:
-# 		_cleanup_gpu()
+		# Destroy uniform objects
+		for obj in data_cache.values():
+			var rid = obj["rid"]
 
-func _exit_tree():
-	_cleanup_gpu()
+			# if rid is an array, loop through it
+			if rid is Array:
+				for r in rid:
+					if r.is_valid():
+						rd.free_rid(r)
+			# else, just destroy it
+			else:
+				if rid.is_valid():
+					rd.free_rid(rid)
+		data_cache.clear()
+		assert(data_cache.size() == 0, "Data cache was not cleared")
 
-func _cleanup_gpu() -> void:
-	# Check if rendering device is already initialized
-	if rd == null:
-		return
+		# Destroy shaders
+		for obj in shader_cache.values():
+			if obj["shader"].is_valid():
+				rd.free_rid(obj["shader"])
+		shader_cache.clear()
+		assert(shader_cache.size() == 0, "Data cache was not cleared")
 
-	# Destroy compute pipelines
-	for obj in shader_cache.values():
-		if obj["pipeline"].is_valid():
-			rd.free_rid(obj["pipeline"])
-
-	# Destroy uniform set
-	if uniform_set.is_valid():
-		rd.free_rid(uniform_set)
-	uniform_set = RID()
-
-	# Destroy uniforms
-	for obj in data_cache.values():
-		if obj["rid"].is_valid():
-			rd.free_rid(obj["rid"])
-	data_cache.clear()
-
-	# Destroy shaders
-	for obj in shader_cache.values():
-		if obj["shader"].is_valid():
-			rd.free_rid(obj["shader"])
-	shader_cache.clear()
-
-	# Destroy rendering device
-	rd.free()
-	rd = null
+		# Destroy rendering device
+		rd.free()
+		assert(not is_instance_valid(rd), "Rendering device was not freed")
+		rd = null
 
 func _init_gpu() -> bool:
 	# Check if rendering device is already initialized
@@ -90,9 +85,10 @@ func _finish_register(uniform_name: String, rid: RID, binding: int, uniform_type
 	}
 
 	# Invalidate uniform set
-	if uniform_set.is_valid():
-		rd.free_rid(uniform_set)
-		uniform_set = RID()
+	for shd in shader_cache.values():
+		if shd["uniform_set"].is_valid():
+			rd.free_rid(shd["uniform_set"])
+			shd["uniform_set"] = RID()
 
 func _precheck(uniform_name: String, should_contain: bool = false) -> bool:
 	if not _init_gpu():
@@ -132,6 +128,7 @@ func load_shader(shader_name: String, file_path: String) -> bool:
 	shader_cache[shader_name] = {
 		"shader": shader,
 		"pipeline": pipeline,
+		"uniform_set": RID(),
 	}
 
 	return true
@@ -154,10 +151,9 @@ func unload_shader(shader_name: String) -> bool:
 	if obj["pipeline"].is_valid():
 		rd.free_rid(obj["pipeline"])
 
-	# Invalidate uniform set
-	if uniform_set.is_valid():
-		rd.free_rid(uniform_set)
-		uniform_set = RID()
+	# Destroy uniform set
+	if obj["uniform_set"].is_valid():
+		rd.free_rid(obj["uniform_set"])
 
 	# Destroy shader
 	if obj["shader"].is_valid():
@@ -211,7 +207,7 @@ func register_texture(
 	width: float = 0, height: float = 0,
 	data: PackedByteArray = [],
 	format: int = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM,
-	usage_bits: int = RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT + RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT + RenderingDevice.TEXTURE_USAGE_STORAGE_BIT,
+	additional_usage_bits: int = 0,
 ) -> bool:
 	if not _precheck(texture_name, false):
 		return false
@@ -221,7 +217,11 @@ func register_texture(
 	texture_format.format = format
 	texture_format.width = width
 	texture_format.height = height
-	texture_format.usage_bits = usage_bits
+	texture_format.usage_bits = ( 
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | 		# Required
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |	# Required to retrieve texture data using 'fetch_texture()'
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT		# Required to update texture data using 'update_texture()'
+	) | additional_usage_bits
 
 	# Create texture view
 	var texture_view = RDTextureView.new()
@@ -235,6 +235,64 @@ func register_texture(
 
 	return true
 
+## Registers a sampler uniform under the given name
+func register_sampler(
+	sampler_name: String, binding: int,
+	width: float = 0, height: float = 0,
+	data: PackedByteArray = [],
+	format: int = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM,
+	additional_usage_bits: int = 0,
+) -> bool:
+	if not _precheck(sampler_name, false):
+		return false
+
+	# Create texture format
+	var texture_format = RDTextureFormat.new()
+	texture_format.format = format
+	texture_format.width = width
+	texture_format.height = height
+	texture_format.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | 		# Required
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |		# Required to sample texture
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |	# Required to retrieve texture data using 'fetch_sampler()'
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT		# Required to update texture data using 'update_sampler()'
+	) | additional_usage_bits
+
+	# Create texture view
+	var texture_view = RDTextureView.new()
+
+	# Create texture
+	var texture_rid = rd.texture_create(texture_format, texture_view, [] if data.is_empty() else [data])
+
+	# Create sampler state
+	var sampler_state = RDSamplerState.new()
+	#sampler_state.unnormalized_uvw = true
+
+	# Create sampler
+	var sampler_rid = rd.sampler_create(sampler_state)
+
+	# Create uniform
+	var uniform = RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+	uniform.binding = binding
+	uniform.add_id(sampler_rid)
+	uniform.add_id(texture_rid)
+
+	# Add uniform to cache
+	data_cache[sampler_name] = {
+		"rid": [texture_rid, sampler_rid],
+		"uniform": uniform,
+		"binding": binding,
+	}
+
+	# Invalidate uniform set
+	for shd in shader_cache.values():
+		if shd["uniform_set"].is_valid():
+			rd.free_rid(shd["uniform_set"])
+			shd["uniform_set"] = RID()
+
+	return false
+
 ## Removes any registered uniforms and buffers
 func unregister_uniform(uniform_name: String) -> bool:
 	if not _precheck(uniform_name, true):
@@ -245,13 +303,22 @@ func unregister_uniform(uniform_name: String) -> bool:
 	data_cache.erase(uniform_name)
 
 	# Invalidate uniform set
-	if uniform_set.is_valid():
-		rd.free_rid(uniform_set)
-		uniform_set = RID()
+	for shd in shader_cache.values():
+		if shd["uniform_set"].is_valid():
+			rd.free_rid(shd["uniform_set"])
+			shd["uniform_set"] = RID()
 
-	# Destroy uniform
-	if obj["rid"].is_valid():
-		rd.free_rid(obj["rid"])
+	# Destroy uniform object(s)
+	var rid = obj["rid"]
+	if rid is Array:
+		# if rid is an array, loop through it
+		for r in rid:
+			if r.is_valid():
+				rd.free_rid(r)
+	else:
+		# else, just destroy it
+		if rid.is_valid():
+			rd.free_rid(rid)
 
 	return true
 
@@ -277,6 +344,17 @@ func update_texture(texture_name: String, data: PackedByteArray) -> bool:
 
 	return true
 
+## Updates a sampler uniform with new data
+func update_sampler(sampler_name: String, data: PackedByteArray) -> bool:
+	if not _precheck(sampler_name, true):
+		return false
+
+	# Update texture
+	var sampler = data_cache[sampler_name]
+	rd.texture_update(sampler["rid"][0], 0, data)
+	
+	return true
+
 ## Returns data of the given buffer from the GPU
 func fetch_buffer(buffer_name: String) -> PackedByteArray:
 	if not _precheck(buffer_name, true):
@@ -295,6 +373,15 @@ func fetch_texture(texture_name: String) -> PackedByteArray:
 	var texture = data_cache[texture_name]
 	return rd.texture_get_data(texture["rid"], 0)
 
+## Returns data of the given sampler from the GPU
+func fetch_sampler(sampler_name: String) -> PackedByteArray:
+	if not _precheck(sampler_name, true):
+		return PackedByteArray()
+
+	# Fetch texture
+	var sampler = data_cache[sampler_name]
+	return rd.texture_get_data(sampler["rid"][0], 0)
+
 ## Creates a compute list for the given shader and dispatches it
 func execute(shader_name: String, x_groups: int = 1, y_groups: int = 1, z_groups: int = 1) -> void:
 	assert(rd != null, "Rendering device is not initialized")
@@ -304,6 +391,7 @@ func execute(shader_name: String, x_groups: int = 1, y_groups: int = 1, z_groups
 	# Get shader and pipeline
 	var shader = shader_cache[shader_name]["shader"]
 	var pipeline = shader_cache[shader_name]["pipeline"]
+	var uniform_set = shader_cache[shader_name]["uniform_set"]
 
 	# Create compute list
 	var compute_list = rd.compute_list_begin()
@@ -318,7 +406,8 @@ func execute(shader_name: String, x_groups: int = 1, y_groups: int = 1, z_groups
 		)
 		uniform_set = rd.uniform_set_create(uniforms, shader, 0)
 		assert(uniform_set.is_valid(), "Failed to create uniform set")
-
+		shader_cache[shader_name]["uniform_set"] = uniform_set
+	
 	# Bind uniform set
 	rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
 
@@ -332,7 +421,7 @@ func execute(shader_name: String, x_groups: int = 1, y_groups: int = 1, z_groups
 	rd.submit()
 
 	# Emit signal
-	compute_started.emit()
+	compute_dispatched.emit(shader_name)
 
 ## Forces a synchronization between the CPU and GPU
 func sync() -> void:
@@ -342,7 +431,7 @@ func sync() -> void:
 	rd.sync()
 
 	# Emit signal
-	compute_finished.emit()
+	compute_synced.emit()
 
 ## Returns whether the rendering device is available
 func is_available() -> bool:
