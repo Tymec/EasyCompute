@@ -14,4 +14,3 @@ config/name="EasyCompute"
 config/tags=PackedStringArray("plugin")
 config/features=PackedStringArray("4.1", "Forward Plus")
 config/icon="res://icon.svg"
-
