@@ -1,4 +1,4 @@
-@icon("res://icon.svg")
+@icon("res://addons/easy_compute/icon.svg")
 class_name EasyCompute extends RefCounted
 
 
